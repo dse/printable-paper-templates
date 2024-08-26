@@ -1,0 +1,102 @@
+#!/usr/bin/env perl
+use warnings;
+use strict;
+use open IO => ':locale';
+
+use FindBin;
+use lib "${FindBin::Bin}/../lib";
+
+use My::RuledPaper;
+use My::RuledPaper::MonkeyPatch::Drawing;
+use My::RuledPaper::Constants qw(:all);
+use POSIX qw(floor);
+
+draw_paper();
+
+sub draw_paper {
+    my $green = COLOR_GREEN;
+    my %paper_size = LETTER;
+
+    my $pen_width_1 = 8/600 * IN;
+    my $pen_width_2 = 2/600 * IN;
+    my $pen_width_3 = 0.5/600 * IN;
+
+    my $p = My::RuledPaper->new();
+    $p->{width} = $paper_size{width};
+    $p->{height} = $paper_size{height};
+    $p->{style} = <<"END";
+        line, rect {
+            fill: none;
+            stroke-width: ${pen_width_1}px;
+            stroke: ${green};
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+        .pen-1 { stroke-width: ${pen_width_1}px; }
+        .pen-2 { stroke-width: ${pen_width_2}px; }
+        .pen-3 { stroke-width: ${pen_width_3}px; }
+        .fill {
+            fill: ${green};
+        }
+        circle {
+            fill: ${green};
+        }
+END
+
+    my $unit_grid_1 = 1 * IN;
+    my $unit_grid_2 = 0.2 * IN;
+    my $unit_grid_3 = 0.04 * IN;
+
+    my $x_start = 1 * IN;
+    my $y_start = 0.5 * IN;
+
+    my $xx_start_1 = 0 - floor($x_start / $unit_grid_1);
+    my $yy_start_1 = 0 - floor($y_start / $unit_grid_1);
+    my $xx_start_2 = 0 - floor($x_start / $unit_grid_2);
+    my $yy_start_2 = 0 - floor($y_start / $unit_grid_2);
+    my $xx_start_3 = 0 - floor($x_start / $unit_grid_3);
+    my $yy_start_3 = 0 - floor($y_start / $unit_grid_3);
+
+    my $xx_end_1 = floor(($p->{width}  - $x_start) / $unit_grid_1);
+    my $yy_end_1 = floor(($p->{height} - $y_start) / $unit_grid_1);
+    my $xx_end_2 = floor(($p->{width}  - $x_start) / $unit_grid_2);
+    my $yy_end_2 = floor(($p->{height} - $y_start) / $unit_grid_2);
+    my $xx_end_3 = floor(($p->{width}  - $x_start) / $unit_grid_3);
+    my $yy_end_3 = floor(($p->{height} - $y_start) / $unit_grid_3);
+
+    my $x_end = $x_start + $unit_grid_1 * $xx_end_1;
+    my $y_end = $y_start + $unit_grid_1 * $yy_end_1;
+
+    for (my $xx = 0; $xx <= $xx_end_1 * 25; $xx += 1) {
+        next if ($xx % 5 == 0);
+        my $x = $x_start + $xx * $unit_grid_3;
+        $p->line($x, $y_start, $x, $y_end, class => 'pen-3');
+    }
+    for (my $yy = 0; $yy <= $yy_end_1 * 25; $yy += 1) {
+        next if ($yy % 5 == 0);
+        my $y = $y_start + $yy * $unit_grid_3;
+        $p->line($x_start, $y, $x_end, $y, class => 'pen-3');
+    }
+
+    for (my $xx = 0; $xx <= $xx_end_1 * 5; $xx += 1) {
+        next if ($xx % 5 == 0);
+        my $x = $x_start + $xx * $unit_grid_2;
+        $p->line($x, $y_start, $x, $y_end, class => 'pen-2');
+    }
+    for (my $yy = 0; $yy <= $yy_end_1 * 5; $yy += 1) {
+        next if ($yy % 5 == 0);
+        my $y = $y_start + $yy * $unit_grid_2;
+        $p->line($x_start, $y, $x_end, $y, class => 'pen-2');
+    }
+
+    for (my $xx = 0; $xx <= $xx_end_1; $xx += 1) {
+        my $x = $x_start + $xx * $unit_grid_1;
+        $p->line($x, $y_start, $x, $y_end, class => 'pen-1');
+    }
+    for (my $yy = 0; $yy <= $yy_end_1; $yy += 1) {
+        my $y = $y_start + $yy * $unit_grid_1;
+        $p->line($x_start, $y, $x_end, $y, class => 'pen-1');
+    }
+
+    print($p->svg());
+}

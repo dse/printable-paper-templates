@@ -1,0 +1,271 @@
+#!/usr/bin/env perl
+use warnings;
+use strict;
+use open IO => ':locale';
+use Getopt::Long;
+use POSIX qw(floor);
+use File::Basename qw(dirname);
+
+use lib dirname(__FILE__) . "/../lib";
+
+use My::RuledPaper;
+use My::RuledPaper::MonkeyPatch::Drawing;
+use My::RuledPaper::Constants qw(:all);
+use My::RuledPaper::Parse::Color qw(parseColor);
+use My::RuledPaper::Parse::Dimension qw(parseDimension);
+
+our $color_str;
+our $fence;
+our $dots;
+our $spacing_str;
+our $minor;
+our $feint;
+our $margin_str;
+
+use Getopt::Long;
+Getopt::Long::Configure('gnu_getopt');
+Getopt::Long::GetOptions(
+    "c|color=s"         => \$color_str,
+    "F|no-fence"        => sub { $fence = 0; },
+    "f|fence"           => sub { $fence = 1; },
+    "d|dots"            => sub { $dots = 1; },
+    "D|no-dots"         => sub { $dots = 0; },
+    "s|spacing=s"       => \$spacing_str,
+    "m|minor=i"         => \$minor,
+    "feint=i"           => \$feint,
+    "M|margin=s"        => \$margin_str,
+) or die(":-(\n");
+
+our $color;
+our $spacing;
+our $margin;
+
+if (defined $color_str) {
+    $color = parseColor($color_str);
+    if (!defined $color) {
+        die("invalid color: $color_str\n");
+    }
+}
+if (defined $spacing_str) {
+    $spacing = parseDimension($spacing_str);
+    if (!defined $spacing) {
+        die("invalid dimension: $spacing_str\n");
+    }
+}
+if (defined $margin_str) {
+    $margin = parseDimension($margin_str);
+    if (!defined $margin) {
+        die("invalid dimension: $margin_str\n");
+    }
+}
+
+draw_paper(
+    major_spacing   => $spacing // (1 * IN),
+    minor_div       => $minor // 4,
+    feint_div       => $feint // 4,
+    color           => $color // COLOR_NON_REPRO_BLUE,
+    fence           => $fence // 0,
+    dots            => $dots // 0,
+    margin          => $margin // (1/5 * IN),
+);
+
+sub draw_paper {
+    my %args = @_;
+
+    my $paper_size = $args{paper_size} // {LETTER};
+
+    my $major_color = $args{major_color} // $args{color} // COLOR_NON_REPRO_BLUE;
+    warn("$major_color\n");
+    my $minor_color = $args{minor_color} // $major_color;
+    my $feint_color = $args{feint_color} // $minor_color;
+
+    my $major_pen_width = $args{major_pen_width} // (8 / 600 * IN);
+    my $minor_pen_width = $args{minor_pen_width} // ($major_pen_width / 2);
+    my $feint_pen_width = $args{feint_pen_width} // ($minor_pen_width / 2);
+    if (!defined $args{major_pen_width} && !defined $args{minor_pen_width} && !defined $args{feint_pen_width}) {
+        $major_pen_width = 8/600 * IN;
+        $minor_pen_width = 4/600 * IN;
+        $feint_pen_width = 2/600 * IN;
+    }
+
+    my $major_is_dots = $args{major_is_dots} // $args{dots} // 0;
+    my $minor_is_dots = $args{minor_is_dots} // $args{dots} // 0;
+    my $feint_is_dots = $args{feint_is_dots} // $args{dots} // 0;
+
+    my $major_spacing = $args{major_spacing} // (1 * IN);
+    my $minor_div = $args{minor_div}; # no default
+    my $feint_div = $args{feint_div}; # no default
+
+    my $margin = $args{margin} // (0.25 * IN);
+    my $fence = $args{fence} // 1;
+    my $dot_line_ish = $args{dot_line_ish} // 0;
+    my $wiggle_room = $args{wiggle_room} // 0;
+
+    my $paper = My::RuledPaper->new();
+    $paper->{width} = $paper_size->{width};
+    $paper->{height} = $paper_size->{height};
+    $paper->{style} = <<"END";
+        line, rect {
+            fill: none;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+        .major {
+            stroke-width: ${major_pen_width}px;
+            stroke: ${major_color};
+        }
+        .minor {
+            stroke-width: ${minor_pen_width}px;
+            stroke: ${minor_color};
+        }
+        .feint {
+            stroke-width: ${feint_pen_width}px;
+            stroke: ${feint_color};
+        }
+        .major.fill {
+            fill: ${major_color};
+        }
+        .minor.fill {
+            fill: ${minor_color};
+        }
+        .feint.fill {
+            fill: ${feint_color};
+        }
+END
+    warn($paper->{style});
+
+    my $x_group_count = floor(($paper->{width}  - 2 * $margin - 2 * $wiggle_room) / $major_spacing);
+    my $y_group_count = floor(($paper->{height} - 2 * $margin - 2 * $wiggle_room) / $major_spacing);
+    my $x_start = $paper->{width}  / 2 - ($x_group_count * $major_spacing) / 2;
+    my $y_start = $paper->{height} / 2 - ($y_group_count * $major_spacing) / 2;
+
+    my @x0;
+    my @y0;
+    my @x1;
+    my @y1;
+    my @x2;
+    my @y2;
+    if ($fence) {
+        @x0 = (0 .. ($x_group_count - 0));
+        @y0 = (0 .. ($y_group_count - 0));
+        @x1 = defined $minor_div ? (0 .. (($x_group_count - 0) * $minor_div)) : ();
+        @y1 = defined $minor_div ? (0 .. (($y_group_count - 0) * $minor_div)) : ();
+        @x2 = defined $feint_div ? (0 .. (($x_group_count - 0) * $minor_div * $feint_div)) : ();
+        @y2 = defined $feint_div ? (0 .. (($y_group_count - 0) * $minor_div * $feint_div)) : ();
+    } else {
+        @x0 = (-1 .. ($x_group_count + 1));
+        @y0 = (-1 .. ($y_group_count + 1));
+        @x1 = defined $minor_div ? ((-1 * $minor_div) .. (($x_group_count + 1) * $minor_div)) : ();
+        @y1 = defined $minor_div ? ((-1 * $minor_div) .. (($y_group_count + 1) * $minor_div)) : ();
+        @x2 = defined $feint_div ? ((-1 * $minor_div * $feint_div) .. (($x_group_count + 1) * $minor_div * $feint_div)) : ();
+        @y2 = defined $feint_div ? ((-1 * $minor_div * $feint_div) .. (($y_group_count + 1) * $minor_div * $feint_div)) : ();
+    }
+
+    my $x_left   = $fence ? ($x_start + $x0[0] * $major_spacing) : $margin;
+    my $y_top    = $fence ? ($y_start + $y0[0] * $major_spacing) : $margin;
+    my $x_right  = $fence ? ($x_start + $x0[-1] * $major_spacing) : ($paper->{width} - $margin);
+    my $y_bottom = $fence ? ($y_start + $y0[-1] * $major_spacing) : ($paper->{height} - $margin);
+
+    warn("$x_left $y_top $x_right $y_bottom\n");
+
+    warn("x0: @x0\n");
+    warn("y0: @y0\n");
+    warn("x1: @x1\n");
+    warn("y1: @y1\n");
+    warn("x2: @x2\n");
+    warn("y2: @y2\n");
+
+    if (!$minor_is_dots) {
+        @x1 = grep { $_ % $minor_div != 0 } @x1 if defined $minor_div;
+        @y1 = grep { $_ % $minor_div != 0 } @y1 if defined $minor_div;
+    }
+    if (!$feint_is_dots) {
+        @x2 = grep { $_ % $feint_div != 0 } @x2 if defined $feint_div;
+        @y2 = grep { $_ % $feint_div != 0 } @y2 if defined $feint_div;
+    }
+
+    warn("x0: @x0\n");
+    warn("y0: @y0\n");
+    warn("x1: @x1\n");
+    warn("y1: @y1\n");
+    warn("x2: @x2\n");
+    warn("y2: @y2\n");
+
+    # convert to document coordinates
+    @x0 = map { [$_, $x_start + $_ * $major_spacing] } @x0;
+    @y0 = map { [$_, $y_start + $_ * $major_spacing] } @y0;
+    @x1 = map { [$_, $x_start + $_ * ($major_spacing / $minor_div)] } @x1 if defined $minor_div;
+    @y1 = map { [$_, $y_start + $_ * ($major_spacing / $minor_div)] } @y1 if defined $minor_div;
+    @x2 = map { [$_, $x_start + $_ * ($major_spacing / $minor_div / $feint_div)] } @x2 if defined $feint_div;
+    @y2 = map { [$_, $y_start + $_ * ($major_spacing / $minor_div / $feint_div)] } @y2 if defined $feint_div;
+
+    @x0 = grep { $_->[1] >= $margin && $_->[1] <= ($paper->{width}  - $margin) } @x0;
+    @x1 = grep { $_->[1] >= $margin && $_->[1] <= ($paper->{width}  - $margin) } @x1;
+    @x2 = grep { $_->[1] >= $margin && $_->[1] <= ($paper->{width}  - $margin) } @x2;
+    @y0 = grep { $_->[1] >= $margin && $_->[1] <= ($paper->{height} - $margin) } @y0;
+    @y1 = grep { $_->[1] >= $margin && $_->[1] <= ($paper->{height} - $margin) } @y1;
+    @y2 = grep { $_->[1] >= $margin && $_->[1] <= ($paper->{height} - $margin) } @y2;
+
+    # warn("x0: @x0\n");
+    # warn("y0: @y0\n");
+    # warn("x1: @x1\n");
+    # warn("y1: @y1\n");
+    # warn("x2: @x2\n");
+    # warn("y2: @y2\n");
+
+    if ($major_is_dots) {
+        foreach my $x (@x0) {
+            foreach my $y (@y0) {
+                $paper->circle($x->[1], $y->[1], $major_pen_width / 2, class => 'major fill');
+            }
+        }
+    } else {
+        foreach my $x (@x0) {
+            $paper->line($x->[1], $y_top, $x->[1], $y_bottom, class => 'major');
+        }
+        foreach my $y (@y0) {
+            $paper->line($x_left, $y->[1], $x_right, $y->[1], class => 'major');
+        }
+    }
+    if ($minor_is_dots) {
+        foreach my $x (@x1) {
+            foreach my $y (@y1) {
+                next if ($x->[0] % $minor_div == 0) && ($y->[0] % $minor_div == 0);
+                if ($dot_line_ish && $major_is_dots && $minor_is_dots && (($x->[0] % $minor_div == 0) || ($y->[0] % $minor_div == 0))) {
+                    $paper->circle($x->[1], $y->[1], $major_pen_width / 2, class => 'major fill');
+                } else {
+                    $paper->circle($x->[1], $y->[1], $minor_pen_width / 2, class => 'minor fill');
+                }
+            }
+        }
+    } else {
+        foreach my $x (@x1) {
+            $paper->line($x->[1], $y_top, $x->[1], $y_bottom, class => 'minor');
+        }
+        foreach my $y (@y1) {
+            $paper->line($x_left, $y->[1], $x_right, $y->[1], class => 'minor');
+        }
+    }
+    if ($feint_is_dots) {
+        foreach my $x (@x2) {
+            foreach my $y (@y2) {
+                next if ($x->[0] % $feint_div == 0) && ($y->[0] % $feint_div == 0);
+                if ($dot_line_ish && $minor_is_dots && $feint_is_dots && (($x->[0] % $feint_div == 0) || ($y->[0] % $feint_div == 0))) {
+                    $paper->circle($x->[1], $y->[1], $minor_pen_width / 2, class => 'minor fill');
+                } else {
+                    $paper->circle($x->[1], $y->[1], $feint_pen_width / 2, class => 'feint fill');
+                }
+            }
+        }
+    } else {
+        foreach my $x (@x2) {
+            $paper->line($x->[1], $y_top, $x->[1], $y_bottom, class => 'feint');
+        }
+        foreach my $y (@y2) {
+            $paper->line($x_left, $y->[1], $x_right, $y->[1], class => 'feint');
+        }
+    }
+
+
+    print($paper->svg());
+}

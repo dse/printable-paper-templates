@@ -27,7 +27,8 @@ our @EXPORT_OK = qw(MM IN PT CM PC PX
                     COLOR_CYAN
                     COLOR_YELLOW
                     COLOR_BLACK
-                    COLOR_NON_REPRO_BLUE);
+                    COLOR_NON_REPRO_BLUE
+                    COLOR_WHITE);
 our %EXPORT_TAGS = (
     'all' => [@EXPORT_OK]
 );
@@ -63,6 +64,7 @@ use constant COLOR_MAGENTA        => '#ff8cff';
 use constant COLOR_CYAN           => '#1cffff';
 use constant COLOR_YELLOW         => '#ffff00'; # higher luminance
 use constant COLOR_BLACK          => '#000000';
+use constant COLOR_WHITE          => '#ffffff';
 use constant COLOR_NON_REPRO_BLUE => '#95c9d7';
 
 1;

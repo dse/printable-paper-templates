@@ -204,5 +204,4 @@ if ($gridType eq 'linegrid') {
     }
 }
 
-
 print($p->svg());
